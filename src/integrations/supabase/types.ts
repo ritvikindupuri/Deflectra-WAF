@@ -327,6 +327,7 @@ export type Database = {
           id: string
           paranoia_level: number
           rate_limiting_enabled: boolean
+          resend_api_key: string | null
           updated_at: string
           user_id: string
           webhook_url: string | null
@@ -340,6 +341,7 @@ export type Database = {
           id?: string
           paranoia_level?: number
           rate_limiting_enabled?: boolean
+          resend_api_key?: string | null
           updated_at?: string
           user_id: string
           webhook_url?: string | null
@@ -353,6 +355,7 @@ export type Database = {
           id?: string
           paranoia_level?: number
           rate_limiting_enabled?: boolean
+          resend_api_key?: string | null
           updated_at?: string
           user_id?: string
           webhook_url?: string | null

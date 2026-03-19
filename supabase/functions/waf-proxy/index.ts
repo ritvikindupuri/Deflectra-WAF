@@ -433,6 +433,49 @@ serve(async (req) => {
         .from("protected_sites")
         .update({ threats_blocked: site.threats_blocked + 1 })
         .eq("id", site.id);
+
+      // ──────────────────────────────────────────────
+      // 5b. EMAIL ALERT: Send via Resend for high/critical threats
+      // ──────────────────────────────────────────────
+      const effectiveSeverity = blockSeverity || matchedRule?.severity || aiAnalysis?.severity || "medium";
+      if (wafSettings?.resend_api_key && wafSettings?.alert_email && (effectiveSeverity === "critical" || effectiveSeverity === "high")) {
+        try {
+          const threatType = blockRule || matchedRule?.category || aiAnalysis?.threat_type || "unknown";
+          const emailHtml = `
+            <div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px;">
+              <div style="background:#0a0e1a;border-radius:12px;padding:24px;color:#e2e8f0;">
+                <h2 style="margin:0 0 8px;color:#06b6d4;">🛡️ Deflectra WAF — Threat Blocked</h2>
+                <p style="margin:0 0 16px;color:#94a3b8;font-size:14px;">A <strong style="color:${effectiveSeverity === 'critical' ? '#f87171' : '#fb923c'}">${effectiveSeverity.toUpperCase()}</strong> severity threat was detected and blocked.</p>
+                <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                  <tr><td style="padding:6px 0;color:#64748b;width:120px;">Threat Type</td><td style="padding:6px 0;color:#e2e8f0;font-family:monospace;">${threatType}</td></tr>
+                  <tr><td style="padding:6px 0;color:#64748b;">Source IP</td><td style="padding:6px 0;color:#e2e8f0;font-family:monospace;">${clientIp}</td></tr>
+                  <tr><td style="padding:6px 0;color:#64748b;">Country</td><td style="padding:6px 0;color:#e2e8f0;font-family:monospace;">${geoData.country || "Unknown"}</td></tr>
+                  <tr><td style="padding:6px 0;color:#64748b;">Request</td><td style="padding:6px 0;color:#e2e8f0;font-family:monospace;">${requestMethod} ${targetPath}</td></tr>
+                  <tr><td style="padding:6px 0;color:#64748b;">Action</td><td style="padding:6px 0;color:#e2e8f0;font-family:monospace;">${blocked ? "BLOCKED" : "LOGGED"}</td></tr>
+                  <tr><td style="padding:6px 0;color:#64748b;">Reason</td><td style="padding:6px 0;color:#e2e8f0;font-family:monospace;">${blockReason || "Pattern match"}</td></tr>
+                  <tr><td style="padding:6px 0;color:#64748b;">Site</td><td style="padding:6px 0;color:#e2e8f0;font-family:monospace;">${site.name} (${site.url})</td></tr>
+                </table>
+              </div>
+              <p style="margin:16px 0 0;font-size:11px;color:#6b7280;text-align:center;">Deflectra — Adaptive Web Shield</p>
+            </div>`;
+
+          await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${wafSettings.resend_api_key}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              from: "Deflectra WAF <onboarding@resend.dev>",
+              to: [wafSettings.alert_email],
+              subject: `🛡️ [${effectiveSeverity.toUpperCase()}] ${threatType} blocked — ${clientIp}`,
+              html: emailHtml,
+            }),
+          });
+        } catch (emailErr) {
+          console.error("Email alert failed:", emailErr);
+        }
+      }
     }
 
     // ──────────────────────────────────────────────

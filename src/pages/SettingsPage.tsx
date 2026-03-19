@@ -24,9 +24,6 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!user) return;
     loadSettings();
-    // Load resend key from localStorage (user-side secret)
-    const savedKey = localStorage.getItem('deflectra_resend_key');
-    if (savedKey) setResendApiKey(savedKey);
   }, [user]);
 
   const loadSettings = async () => {
@@ -36,6 +33,7 @@ export default function SettingsPage() {
       setDefaultAction(data.default_action);
       setWebhookUrl(data.webhook_url || '');
       setAlertEmail(data.alert_email || '');
+      setResendApiKey((data as any).resend_api_key || '');
       setAiDetectionEnabled(data.ai_detection_enabled);
       setApiProtectionEnabled(data.api_protection_enabled);
       setRateLimitingEnabled(data.rate_limiting_enabled);
@@ -46,13 +44,6 @@ export default function SettingsPage() {
   const saveSettings = async () => {
     if (!user) return;
     setSaving(true);
-    
-    // Save resend key to localStorage
-    if (resendApiKey) {
-      localStorage.setItem('deflectra_resend_key', resendApiKey);
-    } else {
-      localStorage.removeItem('deflectra_resend_key');
-    }
 
     const { error } = await supabase.from('waf_settings').upsert({
       user_id: user.id,
@@ -60,10 +51,11 @@ export default function SettingsPage() {
       default_action: defaultAction,
       webhook_url: webhookUrl || null,
       alert_email: alertEmail || null,
+      resend_api_key: resendApiKey || null,
       ai_detection_enabled: aiDetectionEnabled,
       api_protection_enabled: apiProtectionEnabled,
       rate_limiting_enabled: rateLimitingEnabled,
-    }, { onConflict: 'user_id' });
+    } as any, { onConflict: 'user_id' });
     if (error) toast.error('Failed to save');
     else toast.success('Settings saved');
     setSaving(false);
