@@ -1,0 +1,1 @@
+ALTER TABLE public.waf_settings ADD COLUMN resend_api_key text DEFAULT null;
