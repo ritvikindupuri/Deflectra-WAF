@@ -44,13 +44,6 @@ export default function SettingsPage() {
   const saveSettings = async () => {
     if (!user) return;
     setSaving(true);
-    
-    // Save resend key to localStorage
-    if (resendApiKey) {
-      localStorage.setItem('deflectra_resend_key', resendApiKey);
-    } else {
-      localStorage.removeItem('deflectra_resend_key');
-    }
 
     const { error } = await supabase.from('waf_settings').upsert({
       user_id: user.id,
@@ -58,10 +51,11 @@ export default function SettingsPage() {
       default_action: defaultAction,
       webhook_url: webhookUrl || null,
       alert_email: alertEmail || null,
+      resend_api_key: resendApiKey || null,
       ai_detection_enabled: aiDetectionEnabled,
       api_protection_enabled: apiProtectionEnabled,
       rate_limiting_enabled: rateLimitingEnabled,
-    }, { onConflict: 'user_id' });
+    } as any, { onConflict: 'user_id' });
     if (error) toast.error('Failed to save');
     else toast.success('Settings saved');
     setSaving(false);
