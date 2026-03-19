@@ -33,6 +33,7 @@ export default function SettingsPage() {
       setDefaultAction(data.default_action);
       setWebhookUrl(data.webhook_url || '');
       setAlertEmail(data.alert_email || '');
+      setResendApiKey((data as any).resend_api_key || '');
       setAiDetectionEnabled(data.ai_detection_enabled);
       setApiProtectionEnabled(data.api_protection_enabled);
       setRateLimitingEnabled(data.rate_limiting_enabled);
