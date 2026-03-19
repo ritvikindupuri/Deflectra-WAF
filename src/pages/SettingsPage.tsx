@@ -24,9 +24,6 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!user) return;
     loadSettings();
-    // Load resend key from localStorage (user-side secret)
-    const savedKey = localStorage.getItem('deflectra_resend_key');
-    if (savedKey) setResendApiKey(savedKey);
   }, [user]);
 
   const loadSettings = async () => {
