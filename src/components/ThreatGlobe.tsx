@@ -43,6 +43,7 @@ export default function ThreatGlobe({ className }: { className?: string }) {
     const { data } = await supabase
       .from('threat_logs')
       .select('source_lat, source_lng, severity, source_country, threat_type')
+      .select('source_lat, source_lng, severity, source_country, threat_type, details')
       .not('source_lat', 'is', null)
       .not('source_lng', 'is', null)
       .order('created_at', { ascending: false })
@@ -55,6 +56,7 @@ export default function ThreatGlobe({ className }: { className?: string }) {
         severity: t.severity as ThreatPoint['severity'],
         country: t.source_country || undefined,
         type: t.threat_type || undefined,
+        geoSource: (t.details as any)?.geo_source || 'unavailable',
       })));
     }
   };
