@@ -12,6 +12,7 @@ interface ThreatPoint {
   severity: 'critical' | 'high' | 'medium' | 'low';
   country?: string;
   type?: string;
+  geoSource?: string;
 }
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -137,6 +138,7 @@ export default function ThreatGlobe({ className }: { className?: string }) {
             radius: SEVERITY_RADIUS[t.severity] || 5,
             country: t.country || 'Unknown',
             type: t.type || 'Unknown',
+            geoSource: t.geoSource || 'unavailable',
           },
         })),
       };
@@ -183,6 +185,7 @@ export default function ThreatGlobe({ className }: { className?: string }) {
               <div style="font-weight: bold; color: ${props.color}; text-transform: uppercase;">${props.severity} THREAT</div>
               <div style="margin-top: 2px;">Type: ${props.type}</div>
               <div>Origin: ${props.country}</div>
+              <div style="margin-top: 2px; color: ${props.geoSource === 'ip-api' ? '#06b6d4' : '#64748b'}; font-size: 10px;">📍 ${props.geoSource === 'ip-api' ? 'Verified IP location' : 'Geo unavailable'}</div>
             </div>
           `)
           .addTo(map.current!);
