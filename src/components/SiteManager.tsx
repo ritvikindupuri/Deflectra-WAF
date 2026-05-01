@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Plus, Globe, Shield, Trash2, ExternalLink, CheckCircle, XCircle, Copy, Loader2, Brain } from 'lucide-react';
+import { Plus, Globe, Shield, Trash2, ExternalLink, CheckCircle, XCircle, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import SetupWizard from '@/components/SetupWizard';
 import type { Tables } from '@/integrations/supabase/types';
 
 type ProtectedSite = Tables<'protected_sites'>;
@@ -17,8 +18,7 @@ export default function SiteManager() {
   const [newName, setNewName] = useState('');
   const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [aiSetupRunning, setAiSetupRunning] = useState<string | null>(null);
-  const [aiSetupResult, setAiSetupResult] = useState<any>(null);
+  const [wizardSite, setWizardSite] = useState<ProtectedSite | null>(null);
 
   const proxyBaseUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/waf-proxy`;
 
@@ -61,35 +61,9 @@ export default function SiteManager() {
     setNewUrl('');
     setNewName('');
     setAdding(false);
-    toast.success(`${data.name} added — AI is now configuring your WAF...`);
 
-    // Trigger AI auto-setup
-    runAiSetup(data);
-  };
-
-  const runAiSetup = async (site: ProtectedSite) => {
-    setAiSetupRunning(site.id);
-    setAiSetupResult(null);
-    try {
-      const { data, error } = await supabase.functions.invoke('auto-setup-waf', {
-        body: {
-          site_url: site.url,
-          site_name: site.name,
-          site_id: site.id,
-        },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-
-      setAiSetupResult(data);
-      toast.success(`AI configured ${data.rules_created} rules, ${data.rate_limits_created} rate limits, and ${data.endpoints_monitored} API endpoints for ${site.name}`);
-
-      // Refresh site data
-      loadSites();
-    } catch (err: any) {
-      toast.error(err.message || 'AI auto-setup failed');
-    }
-    setAiSetupRunning(null);
+    // Open the setup wizard
+    setWizardSite(data);
   };
 
   const removeSite = async (id: string) => {
@@ -166,67 +140,15 @@ export default function SiteManager() {
         </div>
       )}
 
-      {/* AI Setup Progress */}
-      {aiSetupRunning && (
-        <div className="glass-card rounded-xl p-5 border-primary/30 border">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Brain className="w-5 h-5 text-primary animate-pulse" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-foreground">AI Auto-Configuration Running...</p>
-              <p className="text-xs text-muted-foreground">Analyzing your application and generating security rules</p>
-            </div>
-            <Loader2 className="w-5 h-5 text-primary animate-spin ml-auto" />
-          </div>
-          <div className="space-y-2 text-xs text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <Loader2 className="w-3 h-3 animate-spin text-primary" />
-              <span>Detecting application type and tech stack...</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Loader2 className="w-3 h-3 animate-spin text-primary" />
-              <span>Generating WAF rules (SQLi, XSS, RCE, path traversal)...</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Loader2 className="w-3 h-3 animate-spin text-primary" />
-              <span>Setting up rate limiting and API monitoring...</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Loader2 className="w-3 h-3 animate-spin text-primary" />
-              <span>Finalizing protection configuration...</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* AI Setup Complete */}
-      {aiSetupResult && !aiSetupRunning && (
-        <div className="glass-card rounded-xl p-5 border-primary/30 border">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <CheckCircle className="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-foreground">AI Auto-Configuration Complete</p>
-              <p className="text-xs text-muted-foreground">Detected app type: <span className="text-primary font-medium">{aiSetupResult.app_type}</span></p>
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-secondary/30 rounded-lg p-3 text-center">
-              <p className="text-lg font-bold text-foreground">{aiSetupResult.rules_created}</p>
-              <p className="text-[10px] font-mono text-muted-foreground">WAF RULES</p>
-            </div>
-            <div className="bg-secondary/30 rounded-lg p-3 text-center">
-              <p className="text-lg font-bold text-foreground">{aiSetupResult.rate_limits_created}</p>
-              <p className="text-[10px] font-mono text-muted-foreground">RATE LIMITS</p>
-            </div>
-            <div className="bg-secondary/30 rounded-lg p-3 text-center">
-              <p className="text-lg font-bold text-foreground">{aiSetupResult.endpoints_monitored}</p>
-              <p className="text-[10px] font-mono text-muted-foreground">API ENDPOINTS</p>
-            </div>
-          </div>
-        </div>
+      {/* Setup Wizard */}
+      {wizardSite && (
+        <SetupWizard
+          siteId={wizardSite.id}
+          siteUrl={wizardSite.url}
+          siteName={wizardSite.name}
+          onComplete={() => { setWizardSite(null); loadSites(); }}
+          onCancel={() => setWizardSite(null)}
+        />
       )}
 
       {sites.length === 0 && !adding && (

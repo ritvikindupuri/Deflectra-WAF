@@ -197,7 +197,10 @@ serve(async (req) => {
     const userId = claimsData.claims.sub;
 
     const body = await req.json();
-    const { site_url, site_name, site_id } = body;
+    const { site_url, site_name, site_id, mode } = body;
+    // mode: "preview" = crawl + AI config but DON'T write to DB
+    //        "activate" = receive config payload and write to DB
+    //        undefined/legacy = full auto (crawl + write)
 
     if (!site_url || !site_id) {
       return new Response(JSON.stringify({ error: "site_url and site_id are required" }), {
@@ -206,6 +209,60 @@ serve(async (req) => {
     }
 
     console.log(`Auto-setup WAF for site: ${site_name} (${site_url}), user: ${userId}`);
+
+    // ── ACTIVATE MODE: Write previously generated config to DB ──
+    if (mode === "activate") {
+      const { config } = body;
+      if (!config) {
+        return new Response(JSON.stringify({ error: "config payload required for activate mode" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      let rulesCreated = 0, rateLimitsCreated = 0, endpointsMonitored = 0;
+
+      if (config.waf_rules?.length > 0) {
+        const rules = config.waf_rules.map((r: any) => ({
+          user_id: userId, name: r.name, description: r.description,
+          pattern: r.pattern, category: r.category, severity: r.severity,
+          priority: r.priority, rule_type: "block", enabled: true,
+        }));
+        const { error } = await supabase.from("waf_rules").insert(rules);
+        if (!error) rulesCreated = rules.length;
+        else console.error("Failed to insert rules:", error);
+      }
+
+      if (config.rate_limits?.length > 0) {
+        const rateLimits = config.rate_limits.map((r: any) => ({
+          user_id: userId, name: r.name, path: r.path,
+          max_requests: r.max_requests, window_seconds: r.window_seconds,
+          action: r.action, enabled: true,
+        }));
+        const { error } = await supabase.from("rate_limit_rules").insert(rateLimits);
+        if (!error) rateLimitsCreated = rateLimits.length;
+        else console.error("Failed to insert rate limits:", error);
+      }
+
+      if (config.api_endpoints?.length > 0) {
+        const endpoints = config.api_endpoints.map((e: any) => ({
+          user_id: userId, method: e.method, path: e.path,
+          schema_validation: e.schema_validation, jwt_inspection: e.jwt_inspection,
+          rate_limited: e.rate_limited,
+        }));
+        const { error } = await supabase.from("api_endpoints").insert(endpoints);
+        if (!error) endpointsMonitored = endpoints.length;
+        else console.error("Failed to insert endpoints:", error);
+      }
+
+      await supabase.from("protected_sites").update({ status: "active" }).eq("id", site_id);
+
+      return new Response(JSON.stringify({
+        success: true, activated: true,
+        rules_created: rulesCreated,
+        rate_limits_created: rateLimitsCreated,
+        endpoints_monitored: endpointsMonitored,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     // STEP 1: Real HTTP crawl of the target site
     const intel = await fetchSiteIntelligence(site_url);
@@ -372,6 +429,26 @@ For example:
     console.log(`AI detected app type: ${config.app_type}, rules: ${config.waf_rules?.length}, rate_limits: ${config.rate_limits?.length}, endpoints: ${config.api_endpoints?.length}`);
     console.log(`Crawl summary: ${intel.technologies.length} techs detected, ${intel.apiEndpoints.length} endpoints discovered`);
 
+    // ── PREVIEW MODE: Return crawl data + config without writing ──
+    if (mode === "preview") {
+      return new Response(JSON.stringify({
+        success: true,
+        preview: true,
+        app_type: config.app_type,
+        config,
+        crawl_report: {
+          technologies: intel.technologies,
+          api_endpoints: intel.apiEndpoints,
+          script_sources: intel.scriptSources.slice(0, 15),
+          link_hrefs: intel.linkHrefs.slice(0, 20),
+          form_actions: intel.formActions,
+          meta_tags: intel.metaTags,
+          html_snippet: intel.html.substring(0, 3000),
+        },
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // ── LEGACY MODE: Full auto (crawl + write) ──
     // Insert WAF rules
     if (config.waf_rules?.length > 0) {
       const rules = config.waf_rules.map((r: any) => ({
