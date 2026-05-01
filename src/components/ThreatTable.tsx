@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/hooks/useAuth';
+import { MapPin, MapPinOff } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 
 type ThreatLog = Tables<'threat_logs'>;
@@ -81,6 +82,22 @@ export default function ThreatTable() {
                   <td className="px-5 py-3 font-mono">
                     <span className="text-foreground">{t.source_ip}</span>
                     {t.source_country && <span className="text-muted-foreground ml-1.5">({t.source_country})</span>}
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          {(t.details as any)?.geo_source === 'ip-api' ? (
+                            <MapPin className="inline-block w-3 h-3 ml-1.5 text-accent" />
+                          ) : (
+                            <MapPinOff className="inline-block w-3 h-3 ml-1.5 text-muted-foreground/50" />
+                          )}
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          {(t.details as any)?.geo_source === 'ip-api'
+                            ? 'Verified location via IP geolocation'
+                            : 'Geo data unavailable (private IP or lookup failed)'}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </td>
                   <td className="px-5 py-3 text-foreground">{t.threat_type}</td>
                   <td className="px-5 py-3">

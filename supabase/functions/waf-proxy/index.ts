@@ -1,6 +1,83 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// ──────────────────────────────────────────────
+// GEO-IP CACHE & RATE LIMITING
+// ──────────────────────────────────────────────
+interface GeoResult {
+  lat: number | null;
+  lng: number | null;
+  country: string | null;
+  source: "ip-api" | "unavailable";
+  cachedAt: number;
+}
+
+const GEO_CACHE = new Map<string, GeoResult>();
+const GEO_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const GEO_CACHE_MAX = 2000;
+let geoRequestsThisMinute = 0;
+let geoMinuteWindowStart = Date.now();
+const GEO_RATE_LIMIT_PER_MINUTE = 40; // ip-api free tier: 45/min, keep headroom
+
+function evictStaleGeoCache() {
+  const now = Date.now();
+  for (const [key, val] of GEO_CACHE) {
+    if (now - val.cachedAt > GEO_CACHE_TTL_MS) GEO_CACHE.delete(key);
+  }
+  // Hard cap
+  if (GEO_CACHE.size > GEO_CACHE_MAX) {
+    const oldest = [...GEO_CACHE.entries()].sort((a, b) => a[1].cachedAt - b[1].cachedAt);
+    for (let i = 0; i < oldest.length - GEO_CACHE_MAX; i++) GEO_CACHE.delete(oldest[i][0]);
+  }
+}
+
+async function lookupGeoIp(ip: string): Promise<GeoResult> {
+  // Check cache first
+  const cached = GEO_CACHE.get(ip);
+  if (cached && Date.now() - cached.cachedAt < GEO_CACHE_TTL_MS) return cached;
+
+  // Rate limit check
+  const now = Date.now();
+  if (now - geoMinuteWindowStart > 60_000) {
+    geoRequestsThisMinute = 0;
+    geoMinuteWindowStart = now;
+  }
+  if (geoRequestsThisMinute >= GEO_RATE_LIMIT_PER_MINUTE) {
+    const fallback: GeoResult = { lat: null, lng: null, country: null, source: "unavailable", cachedAt: now };
+    return fallback;
+  }
+
+  // Skip private/invalid IPs
+  if (!ip || ip === "unknown" || ip === "127.0.0.1" || ip.startsWith("10.") || ip.startsWith("192.168.") || ip.startsWith("172.")) {
+    const fallback: GeoResult = { lat: null, lng: null, country: null, source: "unavailable", cachedAt: now };
+    GEO_CACHE.set(ip, fallback);
+    return fallback;
+  }
+
+  geoRequestsThisMinute++;
+
+  try {
+    const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,lat,lon`, {
+      signal: AbortSignal.timeout(2500),
+    });
+    if (geoRes.ok) {
+      const geo = await geoRes.json();
+      if (geo.status === "success") {
+        const result: GeoResult = { lat: geo.lat, lng: geo.lon, country: geo.country, source: "ip-api", cachedAt: now };
+        GEO_CACHE.set(ip, result);
+        evictStaleGeoCache();
+        return result;
+      }
+    }
+  } catch (e) {
+    console.error("Geo-IP lookup failed:", e);
+  }
+
+  const fallback: GeoResult = { lat: null, lng: null, country: null, source: "unavailable", cachedAt: now };
+  GEO_CACHE.set(ip, fallback);
+  return fallback;
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-deflectra-site-id, x-forwarded-for, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
@@ -138,22 +215,15 @@ serve(async (req) => {
     const authHeader = req.headers.get("authorization") || "";
 
     let geoData = { lat: null as number | null, lng: null as number | null, country: null as string | null };
+    let geoSource: "ip-api" | "unavailable" = "unavailable";
 
     // ──────────────────────────────────────────────
     // GEO-IP LOOKUP: Real geolocation via ip-api.com
     // ──────────────────────────────────────────────
-    if (clientIp && clientIp !== "unknown" && clientIp !== "127.0.0.1") {
-      try {
-        const geoRes = await fetch(`http://ip-api.com/json/${clientIp}?fields=status,country,lat,lon`, { signal: AbortSignal.timeout(3000) });
-        if (geoRes.ok) {
-          const geo = await geoRes.json();
-          if (geo.status === "success") {
-            geoData = { lat: geo.lat, lng: geo.lon, country: geo.country };
-          }
-        }
-      } catch (geoErr) {
-        console.error("Geo-IP lookup failed:", geoErr);
-      }
+    {
+      const geo = await lookupGeoIp(clientIp);
+      geoData = { lat: geo.lat, lng: geo.lng, country: geo.country };
+      geoSource = geo.source;
     }
 
     let blocked = false;
@@ -434,6 +504,7 @@ serve(async (req) => {
           schema_checked: matchedEndpoint?.schema_validation || false,
           rate_limited: blockRule?.startsWith("Rate Limit") || false,
           blocked,
+          geo_source: geoSource,
         },
       });
 
