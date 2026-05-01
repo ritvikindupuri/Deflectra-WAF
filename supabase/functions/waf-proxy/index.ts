@@ -138,6 +138,24 @@ serve(async (req) => {
     const authHeader = req.headers.get("authorization") || "";
 
     let geoData = { lat: null as number | null, lng: null as number | null, country: null as string | null };
+
+    // ──────────────────────────────────────────────
+    // GEO-IP LOOKUP: Real geolocation via ip-api.com
+    // ──────────────────────────────────────────────
+    if (clientIp && clientIp !== "unknown" && clientIp !== "127.0.0.1") {
+      try {
+        const geoRes = await fetch(`http://ip-api.com/json/${clientIp}?fields=status,country,lat,lon`, { signal: AbortSignal.timeout(3000) });
+        if (geoRes.ok) {
+          const geo = await geoRes.json();
+          if (geo.status === "success") {
+            geoData = { lat: geo.lat, lng: geo.lon, country: geo.country };
+          }
+        }
+      } catch (geoErr) {
+        console.error("Geo-IP lookup failed:", geoErr);
+      }
+    }
+
     let blocked = false;
     let blockReason = "";
     let blockSeverity = "high";
@@ -339,7 +357,7 @@ serve(async (req) => {
             messages: [
               {
                 role: "system",
-                content: `You are DEFLECTRA WAF. Classify this HTTP request as safe or threat. Also estimate the geographic origin of the IP address. Respond with tool call only.`
+                content: `You are DEFLECTRA WAF. Classify this HTTP request as safe or threat. Respond with tool call only.`
               },
               {
                 role: "user",
@@ -350,7 +368,7 @@ serve(async (req) => {
               type: "function",
               function: {
                 name: "classify",
-                description: "Classify request and estimate IP geolocation",
+                description: "Classify the HTTP request as safe or threat",
                 parameters: {
                   type: "object",
                   properties: {
@@ -360,11 +378,8 @@ serve(async (req) => {
                     action: { type: "string", enum: ["blocked", "challenged", "logged", "allowed"] },
                     confidence: { type: "number" },
                     reason: { type: "string" },
-                    source_lat: { type: "number" },
-                    source_lng: { type: "number" },
-                    source_country: { type: "string" }
                   },
-                  required: ["is_threat", "threat_type", "severity", "action", "confidence", "reason", "source_lat", "source_lng", "source_country"],
+                  required: ["is_threat", "threat_type", "severity", "action", "confidence", "reason"],
                   additionalProperties: false
                 }
               }
@@ -383,13 +398,6 @@ serve(async (req) => {
               blockReason = aiAnalysis.reason;
               blockSeverity = aiAnalysis.severity;
               blockRule = "AI Detection";
-            }
-            if (aiAnalysis.source_lat && aiAnalysis.source_lng) {
-              geoData = {
-                lat: aiAnalysis.source_lat,
-                lng: aiAnalysis.source_lng,
-                country: aiAnalysis.source_country || null,
-              };
             }
           }
         }

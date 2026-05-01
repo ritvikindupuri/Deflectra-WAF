@@ -150,12 +150,27 @@ If it contains any suspicious patterns, classify appropriately.`
 
     // Log the threat to the database
     if (analysis.is_threat) {
+      // Real geo-IP lookup
+      let geoData = { lat: null as number | null, lng: null as number | null, country: null as string | null };
+      const ip = request_data.ip || "unknown";
+      if (ip && ip !== "unknown" && ip !== "127.0.0.1") {
+        try {
+          const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,lat,lon`, { signal: AbortSignal.timeout(3000) });
+          if (geoRes.ok) {
+            const geo = await geoRes.json();
+            if (geo.status === "success") {
+              geoData = { lat: geo.lat, lng: geo.lon, country: geo.country };
+            }
+          }
+        } catch { /* geo lookup failed, continue */ }
+      }
+
       await supabase.from("threat_logs").insert({
         user_id: userId,
-        source_ip: request_data.ip || "unknown",
-        source_country: request_data.country || null,
-        source_lat: request_data.lat || null,
-        source_lng: request_data.lng || null,
+        source_ip: ip,
+        source_country: geoData.country,
+        source_lat: geoData.lat,
+        source_lng: geoData.lng,
         threat_type: analysis.threat_type,
         severity: analysis.severity,
         action_taken: analysis.action,
