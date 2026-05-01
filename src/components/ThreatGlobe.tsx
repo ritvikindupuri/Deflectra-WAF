@@ -42,7 +42,6 @@ export default function ThreatGlobe({ className }: { className?: string }) {
   const loadThreats = async () => {
     const { data } = await supabase
       .from('threat_logs')
-      .select('source_lat, source_lng, severity, source_country, threat_type')
       .select('source_lat, source_lng, severity, source_country, threat_type, details')
       .not('source_lat', 'is', null)
       .not('source_lng', 'is', null)
