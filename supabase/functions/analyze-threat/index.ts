@@ -152,14 +152,16 @@ If it contains any suspicious patterns, classify appropriately.`
     if (analysis.is_threat) {
       // Real geo-IP lookup
       let geoData = { lat: null as number | null, lng: null as number | null, country: null as string | null };
+      let geoSource: "ip-api" | "unavailable" = "unavailable";
       const ip = request_data.ip || "unknown";
       if (ip && ip !== "unknown" && ip !== "127.0.0.1") {
         try {
-          const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,lat,lon`, { signal: AbortSignal.timeout(3000) });
+          const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,lat,lon`, { signal: AbortSignal.timeout(2500) });
           if (geoRes.ok) {
             const geo = await geoRes.json();
             if (geo.status === "success") {
               geoData = { lat: geo.lat, lng: geo.lon, country: geo.country };
+              geoSource = "ip-api";
             }
           }
         } catch { /* geo lookup failed, continue */ }
@@ -182,6 +184,7 @@ If it contains any suspicious patterns, classify appropriately.`
           explanation: analysis.explanation,
           indicators: analysis.indicators,
           raw_request: request_data,
+          geo_source: geoSource,
         },
       });
     }
