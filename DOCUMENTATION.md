@@ -46,7 +46,7 @@ Deflectra is a fully functional, AI-powered Web Application Firewall (WAF) built
 Unlike traditional WAFs that rely solely on static regex rules, Deflectra combines three layers of defense:
 
 1. **Regex-Based Rule Engine** — Pattern matching against known attack signatures (SQLi, XSS, LFI, RCE) with configurable priority ordering.
-2. **AI Threat Classification** — Google Gemini 3.1 Pro analyzes requests in real-time and classifies them as safe or malicious with confidence scores and geographic origin estimation.
+2. **AI Threat Classification** — Google Gemini 3.1 Pro analyzes requests in real-time and classifies them as safe or malicious with confidence scores and real IP geolocation lookup for verified geographic coordinates.
 3. **API Shield Enforcement** — JWT token validation, JSON schema validation, and per-IP rate limiting enforced at the proxy layer.
 
 **Anyone can create an account** on Deflectra and connect their own web applications for WAF protection. The AI-powered onboarding system automatically crawls your site, detects your tech stack, and generates tailored WAF rules, rate limits, and API monitoring configurations.
@@ -429,7 +429,7 @@ Loads all enabled rules from `waf_rules` ordered by priority:
 - Rules are processed in priority order (lower number = higher priority)
 
 **Stage 7 — AI Analysis:**
-If no regex rule matched, the request is sent to **Google Gemini 3.1 Pro** for deep threat classification:
+If no regex rule matched, the request is sent to **Google Gemini 3 Flash** for fast inline threat classification:
 - The AI receives the full request context: method, path, body (first 500 chars), user-agent, and source IP
 - Uses structured **tool calling** to guarantee a parseable JSON response containing: `is_threat`, `threat_type`, `severity`, `confidence`, `reason`
 - The AI evaluates for 10+ threat categories: SQLi, XSS, RCE, LFI, bot abuse, rate abuse, credential stuffing, API abuse, CSRF, and malformed requests
@@ -567,7 +567,7 @@ The following sections describe each stage of the AI analysis in detail.
    - **30-59%** — Suspicious, may be logged for review (potential false positive)
    - **0-29%** — Probably safe, allowed through
 
-6. **Logging & Visualization** — Threats are logged to `threat_logs` with full metadata including AI-estimated geographic coordinates for the 3D threat globe.
+6. **Logging & Visualization** — Threats are logged to `threat_logs` with full metadata including verified geographic coordinates from real IP geolocation lookup for the 3D threat globe.
 
 ### Cloudflare Worker Domain Configuration
 
@@ -1772,7 +1772,7 @@ Deflectra is a production-grade, AI-powered Web Application Firewall that combin
 The application demonstrates full-stack development capabilities across:
 - **Frontend:** React, TypeScript, Tailwind CSS, shadcn/ui, Mapbox GL, Recharts, Framer Motion
 - **Backend:** Supabase (PostgreSQL, Edge Functions, Realtime, Auth, RLS)
-- **AI:** Google Gemini 3 Flash via structured tool calling
+- **AI:** Google Gemini 3.1 Pro (deep analysis API) and Gemini 3 Flash (inline WAF proxy) via structured tool calling
 - **Infrastructure:** Cloudflare Workers for edge routing
 
 Deflectra is designed as a multi-tenant application where **anyone can create an account and connect their own web applications** for WAF protection. The AI-powered onboarding crawls each site in real-time, detects tech stacks and endpoints, and generates tailored security configurations automatically.
