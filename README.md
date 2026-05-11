@@ -198,7 +198,18 @@ The sidebar on the left provides access to every feature. There is also a **Setu
 4. Give it a name (optional — defaults to the hostname)
 5. Click **Protect Site**
 
-Once added, AI automatically analyzes your application — detecting your tech stack, discovering API endpoints, and generating tailored WAF rules. You will see a **WAF Proxy Endpoint** URL that you will use to route traffic through the firewall.
+The **Setup Wizard** opens automatically and performs a live HTTP crawl of your site. You will see a real-time progress tracker showing:
+- **Crawl** — Fetching your site's HTML and resources
+- **Detect** — Analyzing your tech stack and discovering API endpoints
+- **AI Analysis** — Generating tailored WAF rules, rate limits, and API endpoint configs
+- **Ready** — Configuration complete and ready for your review
+
+After analysis, the wizard displays:
+- A **crawl verification report** showing discovered technologies, endpoints, scripts, and forms
+- A **config diff view** with every generated WAF rule, rate limit, and API endpoint setting
+- A **safe test mode** where you can validate rules against 8 sample attack payloads without affecting real traffic
+
+Only when you click **Activate Protection** are the rules saved to the database and your site goes live. You will then see a **WAF Proxy Endpoint** URL that you will use to route traffic through the firewall.
 
 ### Step 5: Configure WAF Rules
 
