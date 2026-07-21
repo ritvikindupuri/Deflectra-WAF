@@ -30,7 +30,7 @@ An AI-powered Web Application Firewall (WAF) that operates as a Layer 7 reverse 
 ## 📐 System Architecture
 
 <p align="center">
-  <img src="https://i.imgur.com/h5ysf9w.png" alt="Deflectra Adaptive Web Shield System Architecture" width="100%" />
+  <img src="https://i.imgur.com/ki0OeW9.png" alt="Deflectra Adaptive Web Shield System Architecture" width="100%" />
 </p>
 <p align="center"><strong>Figure 1 — Deflectra Adaptive Web Shield Architecture</strong></p>
 
