@@ -30,69 +30,74 @@ An AI-powered Web Application Firewall (WAF) that operates as a Layer 7 reverse 
 ## 📐 System Architecture
 
 <p align="center">
-  <img src="https://i.imgur.com/ki0OeW9.png" alt="Deflectra Adaptive Web Shield System Architecture" width="100%" />
+  <img src="https://i.imgur.com/DTzhcSz.png" alt="Deflectra Cloud-Native Layer 7 Security & Threat Detection Architecture" width="100%" />
 </p>
-<p align="center"><strong>Figure 1 — Deflectra Adaptive Web Shield Architecture</strong></p>
+<p align="center"><strong>Figure 1 — Deflectra Cloud-Native Layer 7 Security & Threat Detection Architecture</strong></p>
 
 ---
 
 ## 🔄 Architectural Flow Breakdown
 
-Every request passing through Deflectra follows an end-to-end multi-tier pipeline across 8 operational components:
+Deflectra's architecture is structured into **5 Security Zones** containing **10 Core System Nodes** and **13 Directional Data Flow Arrows**:
 
-### 1. Clients & Inbound Traffic (Box 1)
-Website visitors, legitimate users, mobile apps, and API consumers send HTTP/HTTPS requests toward your application. Traffic can be routed directly to the WAF proxy endpoint or intercepted via Cloudflare Workers.
+### 1. Security Zones Overview
+- **Zone 1: Untrusted**: Public Internet & Client Traffic (End Users, Web Browsers, Crawlers, or Attackers).
+- **Zone 2: Edge Ingress**: Serverless Edge Inspection Proxy (`waf-proxy` Supabase Edge Functions running on Deno / TypeScript).
+- **Zone 3: Control Plane**: Deflectra Management Plane (React SPA + Supabase PostgreSQL with Row-Level Security).
+- **Zone 4: AI & Telemetry**: Out-of-band external services (Google Gemini 3.1 Pro, ip-api.com, Resend API, Webhooks, Mapbox GL).
+- **Zone 5: Protected Origin**: Customer Application Backend (Web Applications, APIs, Internal Services, Databases).
 
-### 2. Deflectra WAF Proxy Pipeline (Box 2)
-The serverless `waf-proxy` Supabase Edge Function executes a deterministic **6-stage Layer 7 inspection pipeline**:
-1. **JWT Inspection**: Validates `Authorization` bearer tokens. Rejects unauthenticated requests with `401 Unauthorized`.
-2. **JSON Schema Validation**: Checks `POST`/`PUT` request bodies against defined field schemas. Rejects malformed payloads with `400 Bad Request`.
-3. **Per-IP Rate Limiting**: Tracks IP request counts per window against configurable thresholds. Triggers block, throttle, or challenge actions with `429 Too Many Requests`.
-4. **Regex Rule Matching**: Evaluates URL, query params, headers, and body against prioritized rules for SQLi, XSS, RCE, LFI, and custom patterns (`Match / No Match`).
-5. **AI Threat Analysis**: Forwards suspicious requests to Google Gemini 3.1 Pro for deep context evaluation based on configured Paranoia Levels 1–4 (`AI Risk Score`).
-6. **Decision & Forwarding**:
-   - **Allowed Traffic**: Forwards clean requests directly to **Protected Origin Servers (Box 3A)** with `200 OK`.
-   - **Blocked Traffic**: Serves a custom branded HTML block page to the attacker containing threat details, incident ID, and timestamp (`403 Blocked`).
+---
 
-### 3. Backend & Database Layer (Box 4 & 4A)
-Supabase PostgreSQL with Row-Level Security (RLS) stores core operational tables:
-- `protected_sites`: Protected website configs, origin URLs, and proxy endpoints.
-- `waf_rules`: Pre-built and custom regex rules with priority ordering.
-- `rate_limit_rules`: Per-IP thresholds and window durations.
-- `api_endpoints`: JWT, schema, and rate limit toggles per route.
-- `threat_logs`: Incidents, source IP, GeoIP coordinates, severity, and actions.
-- `waf_settings`: Paranoia levels, default actions, and webhooks.
-- `notifications`: Alert dispatch records.
+### 2. Node-by-Node Component Breakdown (Nodes 1–10)
 
-**Realtime Streaming (Box 4A)**: Supabase Realtime streams newly inserted `threat_logs` over WebSockets directly to the client frontend.
+1. **User / Attacker Client (Node 1)**: End users, browsers, crawlers, or attackers sending HTTP/HTTPS requests.
+2. **Cloudflare Worker (Optional - Node 2)**: Edge proxy / CDN that intercepts and routes ingress payload to Deflectra proxy.
+3. **waf-proxy Edge Function (Node 3)**: Serverless reverse proxy executing the 6-Stage Inspection Pipeline:
+   - **Stage 1: JWT Inspection**: Validates Authorization bearer tokens (`401 Unauthorized` on failure).
+   - **Stage 2: JSON Schema Validation**: Checks POST/PUT request body against defined schemas (`400 Bad Request` on failure).
+   - **Stage 3: Per-IP Rate Limiting**: Token bucket frequency check per window (`429 Too Many Requests` on breach).
+   - **Stage 4: Regex Rule Matching**: Prioritized regex matching for SQLi, XSS, RCE, LFI, and custom patterns (`403 Forbidden` on match).
+   - **Stage 5: AI Threat Classification**: Deep context analysis via Google Gemini 3.1 Pro with paranoia levels 1–4.
+   - **Stage 6: Decision Execution**: Forwards clean traffic to origin OR returns branded block page.
+4. **Supabase PostgreSQL Database (Node 4)**: RLS-enabled data store containing `protected_sites`, `waf_rules`, `rate_limit_rules`, `api_endpoints`, `threat_logs`, `waf_settings`, and `notifications`.
+5. **Real IP Geolocation Service (Node 5)**: IP-to-country, lat/long, and ISP attribution via `ip-api.com` with in-memory caching.
+6. **Google Gemini 3.1 Pro AI Engine (Node 6)**: Real-time threat intent classification, risk scoring, and auto-generated WAF rules.
+7. **Blocked Response (Node 7 / 8)**: Serves custom branded HTML block page containing threat details, incident ID, and timestamp (`403 / 429 / 401`).
+8. **Supabase Realtime Engine (Node 8)**: WebSocket Pub/Sub bus pushing live threat events (`INSERT`) to the frontend console.
+9. **Notification Dispatcher (Node 9)**: Async email delivery via Resend API and webhook alerts to Slack, Discord, or SIEM endpoints.
+10. **Customer Protected Origin Server (Node 10)**: Application backend receiving verified, clean HTTP/HTTPS traffic.
 
-### 4. External Services & Integrations (Box 5)
-- **Google Gemini 3.1 Pro**: Real-time AI threat intent classification, risk scoring, and automated rule generation.
-- **ip-api.com**: Source IP geolocation lookup (latitude/longitude & country attribution) with in-memory caching.
-- **Resend API**: Transactional email alerts for high/critical security threats.
-- **Webhooks**: Automated notifications dispatched to Slack, Discord, or custom SIEM endpoints.
-- **Mapbox GL API**: Vector map tiles for rendering the interactive 3D Threat Globe.
+---
 
-### 5. Frontend Control Application (Box 6)
-React 18 SPA providing full security operation capabilities:
-- **Dashboard**: Live traffic volume, block rate metrics, and top attack breakdowns.
-- **3D Threat Globe**: Real-time Mapbox GL visualization of attack origins with animated arcs.
-- **Setup Wizard**: Interactive 4-phase tracker with live crawling, tech stack discovery, and config diffs.
-- **Rule Engine & Rate Limiting Managers**: Full CRUD rule configuration and threshold tuning.
-- **API Protection & AI Sensitivity**: Path toggles and Paranoia level sliders (1–4).
-- **Threat Logs & Inspector**: Incident investigation with IP, location, rule match, and severity details.
+### 3. Step-by-Step Data Flow Arrows (Flows 1–13)
 
-### 6. Alerting & Notification Flow (Box 7)
-When a high or critical threat is detected:
-`High / Critical Threat Detected` $\rightarrow$ `Logged in threat_logs` $\rightarrow$ `Realtime WebSocket Broadcast` $\rightarrow$ `Async Email Alerts via Resend API` $\rightarrow$ `Webhook Dispatches (Slack/Discord)`.
+- **Flow 1 (HTTP/HTTPS Request)**: Client $\rightarrow$ Cloudflare Worker / Direct Proxy Ingress.
+- **Flow 2 (Forward Ingress Payload)**: Cloudflare Worker $\rightarrow$ `waf-proxy` Edge Function.
+- **Flow 3 (Query Active WAF & Site Rules)**: `waf-proxy` $\rightarrow$ Supabase PostgreSQL Database.
+- **Flow 4 (Return Active Rules & Config JSON)**: Supabase PostgreSQL $\rightarrow$ `waf-proxy`.
+- **Flow 5 (Resolve IP Geolocation)**: `waf-proxy` $\rightarrow$ Real IP Geolocation Service (`ip-api.com`).
+- **Flow 6 (Deep AI Threat Inspection)**: `waf-proxy` $\rightarrow$ Google Gemini 3.1 Pro AI Engine.
+- **Flow 7 (Out-of-Band High/Critical Alert)**: `waf-proxy` $\rightarrow$ Notification Dispatcher / Realtime Engine.
+- **Flow 8 (Blocked Response)**: `waf-proxy` $\rightarrow$ Attacker Client (Returns custom `403 / 429 / 401` Branded Block Page).
+- **Flow 9 (Forward Clean Traffic)**: `waf-proxy` $\rightarrow$ Customer Protected Origin Server (HTTP/HTTPS Reverse Proxy).
+- **Flow 10 (Write Audit & Threat Logs)**: `waf-proxy` $\rightarrow$ Supabase PostgreSQL (`threat_logs` table insert).
+- **Flow 11 (Realtime Event Stream INSERT)**: Supabase PostgreSQL $\rightarrow$ Supabase Realtime Engine (WebSocket Bus).
+- **Flow 12 (Live Stream to Dashboard & 3D Globe)**: Supabase Realtime Engine $\rightarrow$ Deflectra Management Console (React Frontend).
+- **Flow 13 (Async Email & Webhook Alerts)**: Notification Dispatcher $\rightarrow$ Resend API / Webhooks (Slack, Discord, SIEM).
 
-### 7. End-to-End Execution Sequence (Box 8 Summary)
-1. Inbound request sent by client/attacker to WAF Proxy Endpoint.
-2. `waf-proxy` Edge Function intercepts request and runs 6-stage inspection pipeline.
-3. Geolocation resolved via IP lookup and threat logged to PostgreSQL `threat_logs` table.
-4. Supabase Realtime streams newly logged threats to frontend Dashboard & 3D Threat Globe.
-5. High/Critical threats trigger async notifications via Resend API or Webhooks.
-6. Clean traffic forwarded to Origin Server; blocked traffic receives branded HTTP 403 response.
+---
+
+### 4. End-to-End Data Flow Summary
+1. Inbound request sent from client to Cloudflare or proxy (`HTTPS`).
+2. Cloudflare forwards request payload to Deflectra `waf-proxy`.
+3. `waf-proxy` loads active rules & configs from Supabase DB.
+4. WAF proxy executes 6-stage inspection pipeline (JWT, Schema, Rate Limit, Regex, AI, Decision).
+5. Geolocation & AI analysis return threat context & risk score.
+6. Clean traffic is forwarded to origin server; blocked traffic receives custom `403/429/401` response.
+7. All requests are audited & logged to Supabase DB.
+8. Logs stream in real time to frontend dashboard and 3D Threat Globe via WebSockets.
+9. High/Critical threats trigger async email and webhook alerts.
 
 ---
 
