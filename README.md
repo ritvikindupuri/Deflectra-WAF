@@ -2,15 +2,15 @@
 
 An AI-powered Web Application Firewall (WAF) that operates as a Layer 7 reverse proxy, combining regex-based pattern matching, Google Gemini AI threat classification, JWT validation, schema enforcement, and per-IP rate limiting to protect web applications from common attacks.
 
-> 🌐 **[Live Demo → https://aiwaf.netlify.app](https://aiwaf.netlify.app/)**
+> **[Live Demo → https://aiwaf.netlify.app](https://aiwaf.netlify.app/)**
 
-> 📖 **[Full Technical Documentation →](DOCUMENTATION.md)**
+> **[Full Technical Documentation →](DOCUMENTATION.md)**
 
 **Anyone can create an account** and connect their own web applications for AI-powered WAF protection.
 
 ---
 
-## 🔑 Key Features
+## Key Features
 
 - **AI-Powered Threat Detection** — Google Gemini 3.1 Pro analyzes suspicious requests in real-time, classifying attack intent with adjustable paranoia levels (1–4)
 - **Regex Rule Engine** — Pre-built and custom regex patterns for SQLi, XSS, RCE, LFI, and path traversal with priority-based execution ordering
@@ -27,7 +27,7 @@ An AI-powered Web Application Firewall (WAF) that operates as a Layer 7 reverse 
 
 ---
 
-## 📐 System Architecture
+## System Architecture
 
 <p align="center">
   <img src="https://i.imgur.com/DTzhcSz.png" alt="Deflectra Cloud-Native Layer 7 Security & Threat Detection Architecture" width="100%" />
@@ -36,7 +36,7 @@ An AI-powered Web Application Firewall (WAF) that operates as a Layer 7 reverse 
 
 ---
 
-## 🔄 Architectural Flow Breakdown
+## System Flow & Component Overview
 
 Deflectra's architecture is structured into **5 Security Zones** containing **10 Core System Nodes** and **13 Directional Data Flow Arrows**:
 
@@ -101,7 +101,7 @@ Deflectra's architecture is structured into **5 Security Zones** containing **10
 
 ---
 
-## 🔧 Tech Stack
+## Tech Stack
 
 ### Frontend
 | Technology | Purpose |
@@ -128,7 +128,7 @@ Deflectra's architecture is structured into **5 Security Zones** containing **10
 
 ---
 
-## 🚀 Setup Guide
+## Setup Guide
 
 ### Step 1: Access the Application
 
@@ -323,10 +323,10 @@ export default {
 
 Review the threats page weekly to identify false positives. If legitimate requests are being blocked, lower the paranoia level or disable specific rules that are too aggressive.
 
-> 💡 **Tip:** Deflectra includes a built-in **Setup Guide** tab in the sidebar that walks you through every configuration step directly within the application.
+> **Tip:** Deflectra includes a built-in **Setup Guide** tab in the sidebar that walks you through every configuration step directly within the application.
 
 ---
 
-## 📄 License
+## License
 
 MIT
