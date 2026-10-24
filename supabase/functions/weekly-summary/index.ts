@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getResendApiKey } from "../_shared/vault-utils.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,6 +13,24 @@ serve(async (req) => {
   }
 
   try {
+    const cronSecret = Deno.env.get("CRON_SECRET");
+    if (!cronSecret) {
+      console.error("CRON_SECRET environment variable not configured");
+      return new Response(JSON.stringify({ error: "Server configuration error" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const providedSecret = req.headers.get("x-cron-secret");
+    if (providedSecret !== cronSecret) {
+      console.warn("Invalid or missing cron secret header");
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
@@ -19,9 +38,8 @@ serve(async (req) => {
     // Get all users with email alerts configured
     const { data: settings } = await supabase
       .from("waf_settings")
-      .select("*")
-      .not("alert_email", "is", null)
-      .not("resend_api_key", "is", null);
+      .select("user_id, alert_email, resend_key_vault_id, resend_api_key")
+      .not("alert_email", "is", null);
 
     if (!settings || settings.length === 0) {
       return new Response(JSON.stringify({ message: "No users with email alerts configured" }), {
@@ -34,6 +52,18 @@ serve(async (req) => {
 
     for (const userSettings of settings) {
       try {
+        // Get Resend API key (from Vault or fallback to plaintext)
+        const resendApiKey = await getResendApiKey(supabase, userSettings.user_id);
+        
+        if (!resendApiKey) {
+          console.warn(`User ${userSettings.user_id} has no Resend API key configured`);
+          results.push({ 
+            user_id: userSettings.user_id, 
+            success: false, 
+            error: "Resend API key not configured" 
+          });
+          continue;
+        }
         // Get threat stats for the past week
         const { data: threats, count: totalThreats } = await supabase
           .from("threat_logs")
@@ -130,7 +160,7 @@ serve(async (req) => {
         const emailRes = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${userSettings.resend_api_key}`,
+            "Authorization": `Bearer ${resendApiKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({

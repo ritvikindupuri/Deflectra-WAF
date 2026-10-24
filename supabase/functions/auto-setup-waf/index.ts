@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { safeFetch } from "../_shared/url-validator.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -46,13 +47,19 @@ async function fetchSiteIntelligence(siteUrl: string): Promise<{
   };
 
   try {
-    const response = await fetch(siteUrl, {
+    const fetchResult = await safeFetch(siteUrl, {
       headers: {
         "User-Agent": "Deflectra-WAF-Crawler/1.0 (Security Analysis)",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       },
-      redirect: "follow",
     });
+
+    if (!fetchResult.ok || !fetchResult.response) {
+      console.warn(`[Site Crawler] Failed to fetch ${siteUrl}: ${fetchResult.error}`);
+      return result;
+    }
+
+    const response = fetchResult.response;
 
     if (!response.ok) {
       console.warn(`[Site Crawler] HTTP ${response.status} for ${siteUrl}`);
