@@ -1,4 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { safeFetch } from "../_shared/url-validator.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -41,13 +43,19 @@ async function fetchSiteIntelligence(siteUrl: string): Promise<{
   };
 
   try {
-    const response = await fetch(siteUrl, {
+    const fetchResult = await safeFetch(siteUrl, {
       headers: {
         "User-Agent": "Deflectra-WAF-Crawler/1.0 (Security Analysis)",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       },
-      redirect: "follow",
     });
+
+    if (!fetchResult.ok || !fetchResult.response) {
+      console.warn(`[Site Crawler] Failed to fetch ${siteUrl}: ${fetchResult.error}`);
+      return result;
+    }
+
+    const response = fetchResult.response;
 
     if (!response.ok) {
       console.warn(`[Site Crawler] HTTP ${response.status} for ${siteUrl}`);
@@ -165,6 +173,31 @@ serve(async (req) => {
   }
 
   try {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized: Authentication required" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized: Invalid token" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { site_url, context, field } = await req.json();
 
     if (!site_url) {

@@ -7,13 +7,13 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.send-notification]
-verify_jwt = false
+verify_jwt = true
 
 [functions.auto-setup-waf]
-verify_jwt = false
+verify_jwt = true
 
 [functions.auto-generate-fields]
-verify_jwt = false
+verify_jwt = true
 
 [functions.weekly-summary]
 verify_jwt = false
